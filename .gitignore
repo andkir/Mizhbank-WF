@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET
+*.dll
+*.exe
+*.pdb
+*.nupkg
+
+# Rider / VS
+.idea/
+*.DotSettings.user
+
+# Claude
+.claude/
