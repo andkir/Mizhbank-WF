@@ -10,5 +10,11 @@ public class RateStore
     public InterbankRate? Latest =>
         _data.LatestSession.Count > 0 ? _data.LatestSession[^1] : null;
 
-    public void Update(ChartData data) => _data = data;
+    public event Action? DataChanged;
+
+    public void Update(ChartData data)
+    {
+        _data = data;
+        DataChanged?.Invoke();
+    }
 }

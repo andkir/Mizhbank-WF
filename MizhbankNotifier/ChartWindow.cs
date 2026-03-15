@@ -11,13 +11,24 @@ public class ChartWindow : Form
 {
     private readonly RateStore            _interbankStore;
     private readonly BlackMarketRateStore _blackMarketStore;
+    private readonly BankRateStore        _bankRateStore;
     private readonly System.Windows.Forms.Timer _refreshTimer;
     private readonly PictureBox _canvas;
 
     private int _activeTab    = 0;
     private int _hoveredIndex = -1;  // index into _combinedRates / _combinedSellPts
     private RectangleF   _plotRect;
-    private RectangleF[] _tabRects = new RectangleF[2];
+    private RectangleF[] _tabRects = new RectangleF[3];
+
+    // ── Bank table state ───────────────────────────────────────────────────────
+    private int  _bankCurrency    = 1;    // 1 = USD, 2 = EUR
+    private int  _bankSortCol     = 1;    // 0=name, 1=updated, 2=buy, 3=sell
+    private bool _bankSortAsc     = false; // descending = newest first
+    private int  _bankScrollOffset = 0;
+    private int  _bankHoveredRow   = -1;
+    private RectangleF[] _bankRowRects  = [];
+    private RectangleF   _btnUsd, _btnEur;
+    private RectangleF[] _bankColHeaders = new RectangleF[4];
 
     // Kept across frames for hover hit-testing
     private PointF[]?                   _combinedSellPts;
@@ -41,14 +52,16 @@ public class ChartWindow : Form
     private static readonly Color TabBorder       = Color.FromArgb(55, 75, 130);
     private static readonly Color GapLineColor    = Color.FromArgb(55, 100, 140, 180);
 
-    private static readonly string[] TabLabels = { "Міжбанк", "Чорний ринок" };
+    private static readonly string[] TabLabels = { "Міжбанк", "Чорний ринок", "В банках" };
     private const int TabBarH = 44;
     private const float GapFraction = 0.05f;  // 5% of plot width for the session gap
 
-    public ChartWindow(RateStore interbankStore, BlackMarketRateStore blackMarketStore)
+    public ChartWindow(RateStore interbankStore, BlackMarketRateStore blackMarketStore,
+        BankRateStore bankRateStore)
     {
         _interbankStore   = interbankStore;
         _blackMarketStore = blackMarketStore;
+        _bankRateStore    = bankRateStore;
 
         Text = "Курси USD/UAH";
         Size = new Size(960, 540);
@@ -61,7 +74,8 @@ public class ChartWindow : Form
         _canvas.Paint      += OnCanvasPaint;
         _canvas.MouseMove  += OnMouseMove;
         _canvas.MouseClick += OnMouseClick;
-        _canvas.MouseLeave += (_, _) => { _hoveredIndex = -1; _canvas.Invalidate(); };
+        _canvas.MouseLeave += (_, _) => { _hoveredIndex = -1; _bankHoveredRow = -1; _canvas.Invalidate(); };
+        _canvas.MouseWheel += OnMouseWheel;
         Controls.Add(_canvas);
 
         Resize += (_, _) => _canvas.Invalidate();
@@ -69,10 +83,24 @@ public class ChartWindow : Form
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
         _refreshTimer.Tick += (_, _) => _canvas.Invalidate();
         _refreshTimer.Start();
+
+        // Repaint immediately whenever any store receives new data (fires on background thread).
+        _interbankStore.DataChanged   += OnDataChanged;
+        _blackMarketStore.DataChanged += OnDataChanged;
+        _bankRateStore.DataChanged    += OnDataChanged;
+    }
+
+    private void OnDataChanged()
+    {
+        if (_canvas.IsHandleCreated)
+            _canvas.BeginInvoke(_canvas.Invalidate);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        _interbankStore.DataChanged   -= OnDataChanged;
+        _blackMarketStore.DataChanged -= OnDataChanged;
+        _bankRateStore.DataChanged    -= OnDataChanged;
         _refreshTimer.Stop();
         base.OnFormClosed(e);
     }
@@ -94,12 +122,76 @@ public class ChartWindow : Form
                 return;
             }
         }
+
+        if (_activeTab == 2)
+        {
+            if (_btnUsd.Contains(e.X, e.Y) && _bankCurrency != 1)
+            {
+                _bankCurrency = 1; _bankScrollOffset = 0; _canvas.Invalidate(); return;
+            }
+            if (_btnEur.Contains(e.X, e.Y) && _bankCurrency != 2)
+            {
+                _bankCurrency = 2; _bankScrollOffset = 0; _canvas.Invalidate(); return;
+            }
+            for (int c = 0; c < _bankColHeaders.Length; c++)
+            {
+                if (_bankColHeaders[c].Contains(e.X, e.Y))
+                {
+                    if (_bankSortCol == c) _bankSortAsc = !_bankSortAsc;
+                    else { _bankSortCol = c; _bankSortAsc = c == 0; }
+                    _bankScrollOffset = 0;
+                    _canvas.Invalidate();
+                    return;
+                }
+            }
+        }
+    }
+
+    private void OnMouseWheel(object? sender, MouseEventArgs e)
+    {
+        if (_activeTab != 2) return;
+        var rates = GetBankRates();
+        int maxScroll = Math.Max(0, rates.Count - VisibleBankRows());
+        _bankScrollOffset = Math.Clamp(_bankScrollOffset - Math.Sign(e.Delta), 0, maxScroll);
+        _canvas.Invalidate();
+    }
+
+    private int VisibleBankRows()
+    {
+        int tableTop = TabBarH + 56 + 36;  // header + controls + col header
+        int rowH = 36;
+        return Math.Max(1, (_canvas.Height - tableTop - 8) / rowH);
+    }
+
+    private List<BankRate> GetBankRates()
+    {
+        var src = _bankCurrency == 1 ? _bankRateStore.Usd : _bankRateStore.Eur;
+        var list = src.ToList();
+        list = _bankSortCol switch
+        {
+            0 => _bankSortAsc ? list.OrderBy(r => r.Name).ToList()      : list.OrderByDescending(r => r.Name).ToList(),
+            1 => _bankSortAsc ? list.OrderBy(r => r.UpdatedAt).ToList() : list.OrderByDescending(r => r.UpdatedAt).ToList(),
+            2 => _bankSortAsc ? list.OrderBy(r => r.Buy).ToList()       : list.OrderByDescending(r => r.Buy).ToList(),
+            _ => _bankSortAsc ? list.OrderBy(r => r.Sell).ToList()      : list.OrderByDescending(r => r.Sell).ToList(),
+        };
+        return list;
     }
 
     private void OnMouseMove(object? sender, MouseEventArgs e)
     {
         bool overTab = _tabRects.Any(r => r.Contains(e.X, e.Y));
-        _canvas.Cursor = overTab ? Cursors.Hand : Cursors.Default;
+        bool overBtn = _activeTab == 2 && (_btnUsd.Contains(e.X, e.Y) || _btnEur.Contains(e.X, e.Y)
+            || _bankColHeaders.Any(h => h.Contains(e.X, e.Y)));
+        _canvas.Cursor = (overTab || overBtn) ? Cursors.Hand : Cursors.Default;
+
+        if (_activeTab == 2)
+        {
+            int hovered = -1;
+            for (int i = 0; i < _bankRowRects.Length; i++)
+                if (_bankRowRects[i].Contains(e.X, e.Y)) { hovered = i; break; }
+            if (hovered != _bankHoveredRow) { _bankHoveredRow = hovered; _canvas.Invalidate(); }
+            return;
+        }
 
         var pts = _combinedSellPts;
         if (pts is null || pts.Length == 0 || _plotRect.Width == 0) return;
@@ -129,12 +221,19 @@ public class ChartWindow : Form
         g.SmoothingMode     = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-        var data = ActiveData;
         var w = _canvas.Width;
         var h = _canvas.Height;
 
         DrawBackground(g, w, h);
         DrawTabs(g, w);
+
+        if (_activeTab == 2)
+        {
+            DrawBankTable(g, w, h);
+            return;
+        }
+
+        var data = ActiveData;
 
         var prev = data.PreviousSession;
         var curr = data.CurrentSession;
@@ -256,7 +355,7 @@ public class ChartWindow : Form
         using var activeFont   = new Font("Segoe UI", 10f, FontStyle.Bold);
         using var inactiveFont = new Font("Segoe UI", 10f);
 
-        const float tabW = 148f, tabH = 30f, tabY = 7f, startX = 16f, gap = 8f;
+        const float tabW = 132f, tabH = 30f, tabY = 7f, startX = 16f, gap = 8f;
 
         for (int i = 0; i < TabLabels.Length; i++)
         {
@@ -312,6 +411,179 @@ public class ChartWindow : Form
         var pSz = g.MeasureString(prevDate, breakFont);
         g.DrawString(prevDate, breakFont, dateBrush, gapStartX - pSz.Width - 3, r.Top + 4);
         g.DrawString(currDate, breakFont, dateBrush, gapStartX + gapW + 3,      r.Top + 4);
+    }
+
+    // ── Bank rates table ───────────────────────────────────────────────────────
+
+    private static readonly Color TableHeaderBg  = Color.FromArgb(28, 36, 68);
+    private static readonly Color TableRowEven   = Color.FromArgb(18, 24, 48);
+    private static readonly Color TableRowOdd    = Color.FromArgb(22, 30, 58);
+    private static readonly Color TableRowHover  = Color.FromArgb(38, 52, 95);
+    private static readonly Color TableBorder    = Color.FromArgb(38, 55, 95);
+    private static readonly Color OptimalBg      = Color.FromArgb(20, 0, 210, 160);
+    private static readonly Color BtnActiveBg    = Color.FromArgb(50, 70, 140);
+
+    private void DrawBankTable(Graphics g, int w, int h)
+    {
+        const float pad = 20f;
+        const float controlY = TabBarH + 14f;
+        const float controlH = 28f;
+        const float btnW = 60f;
+
+        // ── Currency toggle ───────────────────────────────────────────────────
+        using var btnFont   = new Font("Segoe UI", 9f, FontStyle.Bold);
+        using var btnBrush  = new SolidBrush(TitleColor);
+        using var dimBrush  = new SolidBrush(LabelColor);
+
+        _btnUsd = new RectangleF(pad, controlY, btnW, controlH);
+        _btnEur = new RectangleF(pad + btnW + 6f, controlY, btnW, controlH);
+
+        DrawToggleButton(g, _btnUsd, "USD", _bankCurrency == 1, btnFont);
+        DrawToggleButton(g, _btnEur, "EUR", _bankCurrency == 2, btnFont);
+
+        // ── Column layout: Name | Оновлено | Купівля | Продаж ────────────────
+        const float colHeaderY = TabBarH + 56f;
+        const float colHeaderH = 32f;
+        const float nameW = 0.37f, updW = 0.13f, buyW = 0.25f, sellW = 0.25f;
+        float tableLeft  = pad;
+        float tableRight = w - pad;
+        float tableW     = tableRight - tableLeft;
+
+        float[] colX =
+        [
+            tableLeft,
+            tableLeft + tableW * nameW,
+            tableLeft + tableW * (nameW + updW),
+            tableLeft + tableW * (nameW + updW + buyW),
+        ];
+        float[] colW = [ tableW * nameW, tableW * updW, tableW * buyW, tableW * sellW ];
+        string[] colLabels = [ "Банк", "Оновлено", "Купівля", "Продаж" ];
+
+        using var colHeaderFont   = new Font("Segoe UI", 11f, FontStyle.Bold);
+        using var colHeaderBrush  = new SolidBrush(TitleColor);
+        using var sortBrush       = new SolidBrush(BuyColor);
+
+        for (int c = 0; c < 4; c++)
+        {
+            _bankColHeaders[c] = new RectangleF(colX[c], colHeaderY, colW[c], colHeaderH);
+            using var hdrBg = new SolidBrush(TableHeaderBg);
+            g.FillRectangle(hdrBg, _bankColHeaders[c]);
+
+            using var borderPen = new Pen(TableBorder, 1f);
+            g.DrawRectangle(borderPen, colX[c], colHeaderY, colW[c], colHeaderH);
+
+            var lbl = colLabels[c];
+            if (_bankSortCol == c) lbl += _bankSortAsc ? " ↑" : " ↓";
+
+            var lsz  = g.MeasureString(lbl, colHeaderFont);
+            var lblX = c == 0 ? colX[c] + 10 : colX[c] + (colW[c] - lsz.Width) / 2f;
+            var brush = _bankSortCol == c ? sortBrush : colHeaderBrush;
+            g.DrawString(lbl, colHeaderFont, brush, lblX, colHeaderY + (colHeaderH - lsz.Height) / 2f);
+        }
+
+        // ── Rows ──────────────────────────────────────────────────────────────
+        var rates  = GetBankRates();
+        const float rowH  = 36f;
+        float rowTop = colHeaderY + colHeaderH;
+        int   visible = Math.Max(1, (int)((h - rowTop - 8) / rowH));
+        int   start   = Math.Min(_bankScrollOffset, Math.Max(0, rates.Count - visible));
+
+        _bankRowRects = new RectangleF[Math.Min(visible, rates.Count - start)];
+
+        using var nameFont   = new Font("Segoe UI", 11f);
+        using var valueFont  = new Font("Segoe UI", 11f, FontStyle.Bold);
+        using var sellBrush  = new SolidBrush(SellColor);
+        using var buyBrush   = new SolidBrush(BuyColor);
+        using var textBrush  = new SolidBrush(Color.FromArgb(210, 220, 240));
+
+        for (int i = 0; i < _bankRowRects.Length; i++)
+        {
+            int idx  = start + i;
+            if (idx >= rates.Count) break;
+            var rate = rates[idx];
+            float ry = rowTop + i * rowH;
+            var rowRect = new RectangleF(tableLeft, ry, tableW, rowH);
+            _bankRowRects[i] = rowRect;
+
+            // Background
+            Color bgColor = rate.IsOptimal ? OptimalBg
+                : i == _bankHoveredRow ? TableRowHover
+                : (i % 2 == 0 ? TableRowEven : TableRowOdd);
+            using var rowBg = new SolidBrush(bgColor);
+            g.FillRectangle(rowBg, rowRect);
+
+            // Border
+            using var borderPen = new Pen(TableBorder, 0.5f);
+            g.DrawLine(borderPen, tableLeft, ry + rowH - 0.5f, tableRight, ry + rowH - 0.5f);
+
+            // Icon + Name
+            float textY = ry + (rowH - g.MeasureString(rate.Name, nameFont).Height) / 2f;
+            const float iconSize = 22f, iconPad = 6f;
+            float nameX = colX[0] + iconPad;
+            var icon = BankIconStore.Get(rate.Name);
+            if (icon is not null)
+            {
+                float iconY = ry + (rowH - iconSize) / 2f;
+                g.DrawImage(icon, nameX, iconY, iconSize, iconSize);
+                nameX += iconSize + 5f;
+            }
+            g.DrawString(rate.Name, nameFont, textBrush, nameX, textY);
+
+            // Updated
+            var usz = g.MeasureString(rate.UpdatedAt, nameFont);
+            g.DrawString(rate.UpdatedAt, nameFont, textBrush,
+                colX[1] + (colW[1] - usz.Width) / 2f,
+                ry + (rowH - usz.Height) / 2f);
+
+            // Buy
+            var buyStr = rate.Buy > 0 ? $"{rate.Buy:F2}" : "—";
+            var bsz = g.MeasureString(buyStr, valueFont);
+            g.DrawString(buyStr, valueFont, buyBrush,
+                colX[2] + (colW[2] - bsz.Width) / 2f,
+                ry + (rowH - bsz.Height) / 2f);
+
+            // Sell
+            var sellStr = rate.Sell > 0 ? $"{rate.Sell:F2}" : "—";
+            var ssz = g.MeasureString(sellStr, valueFont);
+            g.DrawString(sellStr, valueFont, sellBrush,
+                colX[3] + (colW[3] - ssz.Width) / 2f,
+                ry + (rowH - ssz.Height) / 2f);
+        }
+
+        // Scrollbar indicator
+        if (rates.Count > visible)
+        {
+            float sbH = h - rowTop - 8;
+            float thumbH = sbH * visible / rates.Count;
+            float thumbY = rowTop + (sbH - thumbH) * start / (rates.Count - visible);
+            using var sbBg    = new SolidBrush(Color.FromArgb(25, 255, 255, 255));
+            using var sbThumb = new SolidBrush(Color.FromArgb(70, 120, 180));
+            g.FillRectangle(sbBg,    w - pad + 4, rowTop, 4, sbH);
+            g.FillRectangle(sbThumb, w - pad + 4, thumbY, 4, thumbH);
+        }
+
+        // No data message
+        if (rates.Count == 0)
+        {
+            var msg = "Завантаження...";
+            using var msgFont  = new Font("Segoe UI", 12f);
+            using var msgBrush = new SolidBrush(LabelColor);
+            var msz = g.MeasureString(msg, msgFont);
+            g.DrawString(msg, msgFont, msgBrush, (w - msz.Width) / 2f, rowTop + 40);
+        }
+    }
+
+    private static void DrawToggleButton(Graphics g, RectangleF rect, string text, bool active, Font font)
+    {
+        using var bg = new SolidBrush(active ? BtnActiveBg : Color.FromArgb(25, 32, 60));
+        FillRoundedRect(g, bg, rect, 5);
+        using var border = new Pen(active ? Color.FromArgb(80, 110, 190) : TabBorder, 1f);
+        DrawRoundedRect(g, border, rect, 5);
+        using var textBrush = new SolidBrush(active ? TitleColor : LabelColor);
+        var sz = g.MeasureString(text, font);
+        g.DrawString(text, font, textBrush,
+            rect.X + (rect.Width - sz.Width) / 2f,
+            rect.Y + (rect.Height - sz.Height) / 2f);
     }
 
     // ── Background & header ────────────────────────────────────────────────────

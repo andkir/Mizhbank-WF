@@ -22,9 +22,29 @@ builder.Services.AddHttpClient<BlackMarketService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 });
+builder.Services.AddHttpClient<BankRateService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua",
+        "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    UseCookies          = true,
+    CookieContainer     = new System.Net.CookieContainer(),
+    AllowAutoRedirect   = true,
+    AutomaticDecompression = System.Net.DecompressionMethods.All,
+});
 builder.Services.AddSingleton<RateStore>();
 builder.Services.AddSingleton<BlackMarketRateStore>();
+builder.Services.AddSingleton<BankRateStore>();
+builder.Services.AddSingleton<BankRateHistoryService>();
 builder.Services.AddSingleton<TrayIconService>();
+builder.Services.AddSingleton<BankRateWebViewFetcher>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

@@ -7,17 +7,21 @@ public class TrayIconService : IDisposable
 {
     private NotifyIcon? _notifyIcon;
     private Thread? _uiThread;
+    private Form? _hiddenHost;
+    private readonly ManualResetEventSlim _uiReady = new(false);
     private readonly IHostApplicationLifetime _lifetime;
     private readonly RateStore _rateStore;
     private readonly BlackMarketRateStore _blackMarketStore;
+    private readonly BankRateStore _bankRateStore;
     private ChartWindow? _chartWindow;
 
     public TrayIconService(IHostApplicationLifetime lifetime, RateStore rateStore,
-        BlackMarketRateStore blackMarketStore)
+        BlackMarketRateStore blackMarketStore, BankRateStore bankRateStore)
     {
         _lifetime = lifetime;
         _rateStore = rateStore;
         _blackMarketStore = blackMarketStore;
+        _bankRateStore = bankRateStore;
     }
 
     public void Start()
@@ -34,8 +38,38 @@ public class TrayIconService : IDisposable
             _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
     }
 
+    // Post work to the WinForms STA thread. Safe to call from any thread.
+    public void PostToUI(Action action)
+    {
+        _uiReady.Wait();
+        _hiddenHost!.BeginInvoke(action);
+    }
+
+    // The invisible host control for WebView2 and other UI-thread objects.
+    public Control HiddenHost { get { _uiReady.Wait(); return _hiddenHost!; } }
+
     private void RunTrayIcon()
     {
+        // Create an invisible 1×1 form so we have a message-loop handle for BeginInvoke.
+        _hiddenHost = new Form
+        {
+            Text            = "",
+            Width           = 1,
+            Height          = 1,
+            Opacity         = 0,
+            ShowInTaskbar   = false,
+            FormBorderStyle = FormBorderStyle.None,
+            WindowState     = FormWindowState.Minimized,
+        };
+        _hiddenHost.Show(); // creates HWND
+        _hiddenHost.Hide(); // invisible, handle still alive
+        _uiReady.Set();     // unblocks any waiting PostToUI callers
+
+        // When the host begins shutdown, stop the WinForms message loop cleanly
+        // so Application.Run() returns before the main thread exits.
+        _lifetime.ApplicationStopping.Register(() =>
+            _hiddenHost.BeginInvoke(Application.Exit));
+
         _notifyIcon = new NotifyIcon
         {
             Icon = AppIcon.Create(),
@@ -46,6 +80,8 @@ public class TrayIconService : IDisposable
 
         // Double-click also opens the chart window
         _notifyIcon.DoubleClick += (_, _) => OpenChartWindow();
+
+        OpenChartWindow();
 
         Application.Run();
     }
@@ -89,7 +125,7 @@ public class TrayIconService : IDisposable
             return;
         }
 
-        _chartWindow = new ChartWindow(_rateStore, _blackMarketStore);
+        _chartWindow = new ChartWindow(_rateStore, _blackMarketStore, _bankRateStore);
         _chartWindow.Show();
     }
 
