@@ -5,19 +5,24 @@ namespace MizhbankNotifier;
 
 public class Worker : BackgroundService
 {
-    private readonly MizhbankService _mizhbankService;
-    private readonly TrayIconService _trayIconService;
-    private readonly RateStore _rateStore;
-    private readonly ILogger<Worker> _logger;
+    private readonly MizhbankService      _mizhbankService;
+    private readonly BlackMarketService   _blackMarketService;
+    private readonly TrayIconService      _trayIconService;
+    private readonly RateStore            _rateStore;
+    private readonly BlackMarketRateStore _blackMarketStore;
+    private readonly ILogger<Worker>      _logger;
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
 
-    public Worker(MizhbankService mizhbankService, TrayIconService trayIconService,
-        RateStore rateStore, ILogger<Worker> logger)
+    public Worker(MizhbankService mizhbankService, BlackMarketService blackMarketService,
+        TrayIconService trayIconService, RateStore rateStore,
+        BlackMarketRateStore blackMarketStore, ILogger<Worker> logger)
     {
-        _mizhbankService = mizhbankService;
-        _trayIconService = trayIconService;
-        _rateStore = rateStore;
-        _logger = logger;
+        _mizhbankService    = mizhbankService;
+        _blackMarketService = blackMarketService;
+        _trayIconService    = trayIconService;
+        _rateStore          = rateStore;
+        _blackMarketStore   = blackMarketStore;
+        _logger             = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -27,16 +32,28 @@ public class Worker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var rates = await _mizhbankService.GetAllRatesAsync(stoppingToken);
+            // Fetch both markets concurrently
+            var interbankTask   = _mizhbankService.GetChartDataAsync(stoppingToken);
+            var blackMarketTask = _blackMarketService.GetChartDataAsync(stoppingToken);
+            await Task.WhenAll(interbankTask, blackMarketTask);
 
-            if (rates is { Count: > 0 })
+            var chartData   = interbankTask.Result;
+            var bmChartData = blackMarketTask.Result;
+
+            if (chartData is { HasData: true })
             {
-                _rateStore.Update(rates);
-                var latest = rates[^1];
-                _trayIconService.UpdateTooltip(
-                    $"USD/UAH К:{latest.Buy:F3} П:{latest.Sell:F3} ({latest.Time:HH:mm})");
-                ShowNotification(latest);
+                _rateStore.Update(chartData);
+                var latest = _rateStore.Latest;
+                if (latest is not null)
+                {
+                    _trayIconService.UpdateTooltip(
+                        $"USD/UAH К:{latest.Buy:F3} П:{latest.Sell:F3} ({latest.Time:HH:mm})");
+                    ShowNotification(latest);
+                }
             }
+
+            if (bmChartData is { HasData: true })
+                _blackMarketStore.Update(bmChartData);
 
             await Task.Delay(Interval, stoppingToken);
         }

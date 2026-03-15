@@ -3,15 +3,15 @@ using MizhbankNotifier.Models;
 
 namespace MizhbankNotifier.Services;
 
-public class MizhbankService
+public class BlackMarketService
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<MizhbankService> _logger;
+    private readonly ILogger<BlackMarketService> _logger;
 
     private const string ApiUrl =
-        "https://kurs.com.ua/ajax/getChart?type=interbank&currency_from=USD&currency_to=&size=big";
+        "https://kurs.com.ua/ajax/getChart?type=blackmarket&currency_from=USD&currency_to=&size=small";
 
-    public MizhbankService(HttpClient httpClient, ILogger<MizhbankService> logger)
+    public BlackMarketService(HttpClient httpClient, ILogger<BlackMarketService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -33,7 +33,7 @@ public class MizhbankService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch interbank rates");
+            _logger.LogError(ex, "Failed to fetch black market rates");
             return null;
         }
     }

@@ -17,7 +17,13 @@ builder.Services.AddHttpClient<MizhbankService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 });
+builder.Services.AddHttpClient<BlackMarketService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
 builder.Services.AddSingleton<RateStore>();
+builder.Services.AddSingleton<BlackMarketRateStore>();
 builder.Services.AddSingleton<TrayIconService>();
 builder.Services.AddHostedService<Worker>();
 

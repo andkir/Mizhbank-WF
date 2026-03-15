@@ -4,11 +4,11 @@ namespace MizhbankNotifier.Services;
 
 public class RateStore
 {
-    private volatile IReadOnlyList<InterbankRate> _rates = [];
+    private volatile ChartData _data = ChartData.Empty;
 
-    public IReadOnlyList<InterbankRate> Rates => _rates;
-    public InterbankRate? Latest => _rates.Count > 0 ? _rates[^1] : null;
+    public ChartData Data   => _data;
+    public InterbankRate? Latest =>
+        _data.LatestSession.Count > 0 ? _data.LatestSession[^1] : null;
 
-    public void Update(List<InterbankRate> rates) =>
-        _rates = rates.AsReadOnly();
+    public void Update(ChartData data) => _data = data;
 }

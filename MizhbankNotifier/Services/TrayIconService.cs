@@ -9,12 +9,15 @@ public class TrayIconService : IDisposable
     private Thread? _uiThread;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly RateStore _rateStore;
+    private readonly BlackMarketRateStore _blackMarketStore;
     private ChartWindow? _chartWindow;
 
-    public TrayIconService(IHostApplicationLifetime lifetime, RateStore rateStore)
+    public TrayIconService(IHostApplicationLifetime lifetime, RateStore rateStore,
+        BlackMarketRateStore blackMarketStore)
     {
         _lifetime = lifetime;
         _rateStore = rateStore;
+        _blackMarketStore = blackMarketStore;
     }
 
     public void Start()
@@ -86,7 +89,7 @@ public class TrayIconService : IDisposable
             return;
         }
 
-        _chartWindow = new ChartWindow(_rateStore);
+        _chartWindow = new ChartWindow(_rateStore, _blackMarketStore);
         _chartWindow.Show();
     }
 
