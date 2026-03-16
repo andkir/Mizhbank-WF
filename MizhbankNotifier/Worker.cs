@@ -14,7 +14,8 @@ public class Worker : BackgroundService
     private readonly BlackMarketRateStore     _blackMarketStore;
     private readonly BankRateStore            _bankRateStore;
     private readonly ILogger<Worker>          _logger;
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan Interval     = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan BankInterval = TimeSpan.FromMinutes(10);
 
     public Worker(MizhbankService mizhbankService, BlackMarketService blackMarketService,
         BankRateWebViewFetcher bankWebView, BankRateHistoryService bankHistory,
@@ -61,6 +62,7 @@ public class Worker : BackgroundService
                 {
                     _trayIconService.UpdateTooltip(
                         $"USD/UAH К:{latest.Buy:F3} П:{latest.Sell:F3} ({latest.Time:HH:mm})");
+
                     ShowNotification(latest);
                 }
             }
@@ -93,7 +95,7 @@ public class Worker : BackgroundService
 
             }
 
-            await Task.Delay(Interval, ct);
+            await Task.Delay(BankInterval, ct);
         }
     }
 
@@ -107,8 +109,5 @@ public class Worker : BackgroundService
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
-    {
-        ToastNotificationManagerCompat.Uninstall();
-        return base.StopAsync(cancellationToken);
-    }
+        => base.StopAsync(cancellationToken);
 }

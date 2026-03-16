@@ -17,6 +17,8 @@ public class ChartWindow : Form
 
     private int _activeTab    = 0;
     private int _hoveredIndex = -1;  // index into _combinedRates / _combinedSellPts
+
+
     private RectangleF   _plotRect;
     private RectangleF[] _tabRects = new RectangleF[3];
 
@@ -83,6 +85,7 @@ public class ChartWindow : Form
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
         _refreshTimer.Tick += (_, _) => _canvas.Invalidate();
         _refreshTimer.Start();
+
 
         // Repaint immediately whenever any store receives new data (fires on background thread).
         _interbankStore.DataChanged   += OnDataChanged;
@@ -490,11 +493,16 @@ public class ChartWindow : Form
 
         _bankRowRects = new RectangleF[Math.Min(visible, rates.Count - start)];
 
-        using var nameFont   = new Font("Segoe UI", 11f);
-        using var valueFont  = new Font("Segoe UI", 11f, FontStyle.Bold);
-        using var sellBrush  = new SolidBrush(SellColor);
-        using var buyBrush   = new SolidBrush(BuyColor);
-        using var textBrush  = new SolidBrush(Color.FromArgb(210, 220, 240));
+        using var nameFont       = new Font("Segoe UI", 11f);
+        using var nameFontItalic = new Font("Segoe UI", 11f, FontStyle.Italic);
+        using var valueFont      = new Font("Segoe UI", 11f, FontStyle.Bold);
+        using var valueFontItalic = new Font("Segoe UI", 11f, FontStyle.Bold | FontStyle.Italic);
+        using var sellBrush      = new SolidBrush(SellColor);
+        using var buyBrush       = new SolidBrush(BuyColor);
+        using var textBrush      = new SolidBrush(Color.FromArgb(210, 220, 240));
+        using var staleSellBrush = new SolidBrush(Color.FromArgb(110, SellColor.R, SellColor.G, SellColor.B));
+        using var staleBuyBrush  = new SolidBrush(Color.FromArgb(110, BuyColor.R,  BuyColor.G,  BuyColor.B));
+        using var staleTextBrush = new SolidBrush(Color.FromArgb(110, 140, 160));
 
         for (int i = 0; i < _bankRowRects.Length; i++)
         {
@@ -516,8 +524,17 @@ public class ChartWindow : Form
             using var borderPen = new Pen(TableBorder, 0.5f);
             g.DrawLine(borderPen, tableLeft, ry + rowH - 0.5f, tableRight, ry + rowH - 0.5f);
 
+            // Stale = updated on a previous day (not HH:mm format)
+            bool isStale = !System.Text.RegularExpressions.Regex.IsMatch(
+                rate.UpdatedAt, @"^\d{1,2}:\d{2}$");
+            var rowNameFont  = isStale ? nameFontItalic  : nameFont;
+            var rowValFont   = isStale ? valueFontItalic : valueFont;
+            var rowTextBrush = isStale ? staleTextBrush  : textBrush;
+            var rowBuyBrush  = isStale ? staleBuyBrush   : buyBrush;
+            var rowSellBrush = isStale ? staleSellBrush  : sellBrush;
+
             // Icon + Name
-            float textY = ry + (rowH - g.MeasureString(rate.Name, nameFont).Height) / 2f;
+            float textY = ry + (rowH - g.MeasureString(rate.Name, rowNameFont).Height) / 2f;
             const float iconSize = 22f, iconPad = 6f;
             float nameX = colX[0] + iconPad;
             var icon = BankIconStore.Get(rate.Name);
@@ -527,25 +544,25 @@ public class ChartWindow : Form
                 g.DrawImage(icon, nameX, iconY, iconSize, iconSize);
                 nameX += iconSize + 5f;
             }
-            g.DrawString(rate.Name, nameFont, textBrush, nameX, textY);
+            g.DrawString(rate.Name, rowNameFont, rowTextBrush, nameX, textY);
 
             // Updated
-            var usz = g.MeasureString(rate.UpdatedAt, nameFont);
-            g.DrawString(rate.UpdatedAt, nameFont, textBrush,
+            var usz = g.MeasureString(rate.UpdatedAt, rowNameFont);
+            g.DrawString(rate.UpdatedAt, rowNameFont, rowTextBrush,
                 colX[1] + (colW[1] - usz.Width) / 2f,
                 ry + (rowH - usz.Height) / 2f);
 
             // Buy
             var buyStr = rate.Buy > 0 ? $"{rate.Buy:F2}" : "—";
-            var bsz = g.MeasureString(buyStr, valueFont);
-            g.DrawString(buyStr, valueFont, buyBrush,
+            var bsz = g.MeasureString(buyStr, rowValFont);
+            g.DrawString(buyStr, rowValFont, rowBuyBrush,
                 colX[2] + (colW[2] - bsz.Width) / 2f,
                 ry + (rowH - bsz.Height) / 2f);
 
             // Sell
             var sellStr = rate.Sell > 0 ? $"{rate.Sell:F2}" : "—";
-            var ssz = g.MeasureString(sellStr, valueFont);
-            g.DrawString(sellStr, valueFont, sellBrush,
+            var ssz = g.MeasureString(sellStr, rowValFont);
+            g.DrawString(sellStr, rowValFont, rowSellBrush,
                 colX[3] + (colW[3] - ssz.Width) / 2f,
                 ry + (rowH - ssz.Height) / 2f);
         }
