@@ -1,5 +1,16 @@
 using MizhbankNotifier;
+using MizhbankNotifier.Configuration;
 using MizhbankNotifier.Services;
+
+// Single-instance guard
+using var mutex = new Mutex(true, "Global\\MizhbankNotifier_SingleInstance", out bool createdNew);
+using var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset,
+    "Global\\MizhbankNotifier_ShowWindow");
+if (!createdNew)
+{
+    showSignal.Set();   // tell the running instance to show its window
+    return;
+}
 
 // Generate icon file if requested (used during setup)
 if (args.Length > 0 && args[0] == "--generate-icon")
@@ -12,12 +23,34 @@ if (args.Length > 0 && args[0] == "--generate-icon")
 
 var builder = Host.CreateApplicationBuilder(args);
 
+builder.Services.Configure<ApiUrls>(builder.Configuration.GetSection(ApiUrls.SectionName));
+
 builder.Services.AddHttpClient<MizhbankService>(client =>
 {
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 });
 builder.Services.AddHttpClient<BlackMarketService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
+builder.Services.AddHttpClient<EurMizhbankService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
+builder.Services.AddHttpClient<EurBlackMarketService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
+builder.Services.AddHttpClient<ForexService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
+builder.Services.AddHttpClient<FinanceUaService>(client =>
 {
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
@@ -41,8 +74,13 @@ builder.Services.AddHttpClient<BankRateService>(client =>
 });
 builder.Services.AddSingleton<RateStore>();
 builder.Services.AddSingleton<BlackMarketRateStore>();
+builder.Services.AddSingleton<EurBlackMarketRateStore>();
+builder.Services.AddSingleton<EurRateStore>();
+builder.Services.AddSingleton<ForexRateStore>();
+builder.Services.AddSingleton<FinanceUaRateStore>();
 builder.Services.AddSingleton<BankRateStore>();
 builder.Services.AddSingleton<BankRateHistoryService>();
+builder.Services.AddSingleton<DailyRateDb>();
 builder.Services.AddSingleton<TrayIconService>();
 builder.Services.AddSingleton<BankRateWebViewFetcher>();
 builder.Services.AddHostedService<Worker>();

@@ -10,18 +10,33 @@ public class TrayIconService : IDisposable
     private Form? _hiddenHost;
     private readonly ManualResetEventSlim _uiReady = new(false);
     private readonly IHostApplicationLifetime _lifetime;
-    private readonly RateStore _rateStore;
-    private readonly BlackMarketRateStore _blackMarketStore;
-    private readonly BankRateStore _bankRateStore;
+    private readonly RateStore               _rateStore;
+    private readonly EurRateStore            _eurRateStore;
+    private readonly BlackMarketRateStore    _blackMarketStore;
+    private readonly EurBlackMarketRateStore _eurBlackMarketStore;
+    private readonly ForexRateStore          _forexStore;
+    private readonly FinanceUaRateStore     _financeUaStore;
+    private readonly BankRateStore           _bankRateStore;
+    private readonly DailyRateDb             _dailyRateDb;
     private ChartWindow? _chartWindow;
 
+    public Action? RefreshAction { get; set; }
+
     public TrayIconService(IHostApplicationLifetime lifetime, RateStore rateStore,
-        BlackMarketRateStore blackMarketStore, BankRateStore bankRateStore)
+        EurRateStore eurRateStore, BlackMarketRateStore blackMarketStore,
+        EurBlackMarketRateStore eurBlackMarketStore, ForexRateStore forexStore,
+        FinanceUaRateStore financeUaStore,
+        BankRateStore bankRateStore, DailyRateDb dailyRateDb)
     {
-        _lifetime = lifetime;
-        _rateStore = rateStore;
-        _blackMarketStore = blackMarketStore;
-        _bankRateStore = bankRateStore;
+        _lifetime            = lifetime;
+        _rateStore           = rateStore;
+        _eurRateStore        = eurRateStore;
+        _blackMarketStore    = blackMarketStore;
+        _eurBlackMarketStore = eurBlackMarketStore;
+        _forexStore          = forexStore;
+        _financeUaStore      = financeUaStore;
+        _bankRateStore       = bankRateStore;
+        _dailyRateDb         = dailyRateDb;
     }
 
     public void Start()
@@ -30,6 +45,18 @@ public class TrayIconService : IDisposable
         _uiThread.SetApartmentState(ApartmentState.STA);
         _uiThread.IsBackground = true;
         _uiThread.Start();
+
+        // Listen for second-instance signal to bring window to foreground
+        var showThread = new Thread(() =>
+        {
+            using var signal = EventWaitHandle.OpenExisting("Global\\MizhbankNotifier_ShowWindow");
+            while (!_lifetime.ApplicationStopping.IsCancellationRequested)
+            {
+                if (signal.WaitOne(1000))
+                    PostToUI(OpenChartWindow);
+            }
+        }) { IsBackground = true };
+        showThread.Start();
     }
 
     public void UpdateTooltip(string text)
@@ -125,7 +152,7 @@ public class TrayIconService : IDisposable
             return;
         }
 
-        _chartWindow = new ChartWindow(_rateStore, _blackMarketStore, _bankRateStore);
+        _chartWindow = new ChartWindow(_rateStore, _eurRateStore, _blackMarketStore, _eurBlackMarketStore, _forexStore, _financeUaStore, _bankRateStore, _dailyRateDb, RefreshAction);
         _chartWindow.Show();
     }
 
@@ -170,6 +197,8 @@ public class TrayIconService : IDisposable
 
         protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
         {
+            using var bgBrush = new SolidBrush(BgColor);
+            e.Graphics.FillRectangle(bgBrush, new Rectangle(0, 0, e.Item.Width, e.Item.Height));
             var y = e.Item.Height / 2;
             using var pen = new Pen(BorderColor);
             e.Graphics.DrawLine(pen, 8, y, e.Item.Width - 8, y);

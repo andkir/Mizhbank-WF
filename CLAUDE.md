@@ -10,9 +10,6 @@ cd MizhbankNotifier && dotnet build -c Release
 
 # Build entire solution
 dotnet build mizhbank.sln -c Release
-
-# Run the icon downloader helper
-cd DownloadIcons && dotnet run
 ```
 
 There are no tests. The only binary that matters is `MizhbankNotifier`.

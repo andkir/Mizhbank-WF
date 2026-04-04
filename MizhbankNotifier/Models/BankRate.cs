@@ -1,3 +1,3 @@
 namespace MizhbankNotifier.Models;
 
-public record BankRate(string Name, decimal Buy, decimal Sell, string UpdatedAt, bool IsOptimal = false);
+public record BankRate(string Name, decimal Buy, decimal Sell, string UpdatedAt, bool IsOptimal = false, DateOnly? UpdatedDate = null);

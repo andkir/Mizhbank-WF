@@ -4,13 +4,13 @@ using MizhbankNotifier.Models;
 
 namespace MizhbankNotifier.Services;
 
-public class BlackMarketService
+public class ForexService
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<BlackMarketService> _logger;
+    private readonly ILogger<ForexService> _logger;
     private readonly ApiUrls _urls;
 
-    public BlackMarketService(HttpClient httpClient, IOptions<ApiUrls> urls, ILogger<BlackMarketService> logger)
+    public ForexService(HttpClient httpClient, IOptions<ApiUrls> urls, ILogger<ForexService> logger)
     {
         _httpClient = httpClient;
         _urls       = urls.Value;
@@ -21,7 +21,7 @@ public class BlackMarketService
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, _urls.KursBlackMarketUsd);
+            var request = new HttpRequestMessage(HttpMethod.Get, _urls.KursForexEurUsd);
             request.Headers.Add("X-Requested-With", "XMLHttpRequest");
             request.Headers.Add("Referer", _urls.KursChartReferer);
 
@@ -33,7 +33,7 @@ public class BlackMarketService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch black market rates");
+            _logger.LogError(ex, "Failed to fetch forex EUR/USD rates");
             return null;
         }
     }

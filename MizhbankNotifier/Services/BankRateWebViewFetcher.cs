@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Options;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using MizhbankNotifier.Configuration;
 using MizhbankNotifier.Models;
 
 namespace MizhbankNotifier.Services;
@@ -12,20 +14,16 @@ public class BankRateWebViewFetcher : IDisposable
 {
     private readonly TrayIconService             _tray;
     private readonly ILogger<BankRateWebViewFetcher> _logger;
+    private readonly ApiUrls _urls;
 
     private WebView2? _wv;
     private bool      _ready;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    private const string WarmUrl = "https://kurs.com.ua/";
-    private const string AjaxUrl =
-        "https://kurs.com.ua/ajax/organizations/cash" +
-        "?currency_from={0}&currency_to=undef" +
-        "&organizations=MAJOR&show_optimal=1&current_page=money.index";
-
-    public BankRateWebViewFetcher(TrayIconService tray, ILogger<BankRateWebViewFetcher> logger)
+    public BankRateWebViewFetcher(TrayIconService tray, IOptions<ApiUrls> urls, ILogger<BankRateWebViewFetcher> logger)
     {
         _tray   = tray;
+        _urls   = urls.Value;
         _logger = logger;
     }
 
@@ -67,7 +65,7 @@ public class BankRateWebViewFetcher : IDisposable
                     warmTcs.TrySetResult();
                 };
                 _wv.NavigationCompleted += onWarm;
-                _wv.CoreWebView2.Navigate(WarmUrl);
+                _wv.CoreWebView2.Navigate(_urls.KursHome);
 
                 // Wait up to 30 s for CF challenge + page load.
                 await warmTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
@@ -103,7 +101,8 @@ public class BankRateWebViewFetcher : IDisposable
         try
         {
             var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var url = string.Format(AjaxUrl, currency);
+            var url = string.Format(_urls.KursBankRatesAjax, currency);
+            var referer = _urls.KursBankRatesPage;
 
             _tray.PostToUI(async () =>
             {
@@ -124,7 +123,7 @@ public class BankRateWebViewFetcher : IDisposable
                             headers: {
                                 'Accept':           'application/json, text/javascript, */*; q=0.01',
                                 'X-Requested-With': 'XMLHttpRequest',
-                                'Referer':          'https://kurs.com.ua/money.index'
+                                'Referer':          '{{referer}}'
                             }
                         })
                         .then(r  => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))

@@ -66,8 +66,14 @@ internal static class BankRateParser
             var name = CleanText(nameNode.InnerText);
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            // td[2]: updated time
+            // td[2]: updated time — data-sortValue holds "yyyy-MM-dd HH:mm"
             var updated = CleanText(cells[2].InnerText);
+            var timeSortVal = cells[2].GetAttributeValue("data-sortValue", "").Trim();
+            DateOnly? updatedDate = null;
+            if (timeSortVal.Length >= 10 && DateOnly.TryParseExact(
+                    timeSortVal[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var parsedDate))
+                updatedDate = parsedDate;
 
             // td[3]: buy — use data-sortValue for clean numeric string
             var buyStr  = cells[3].GetAttributeValue("data-sortValue", "")
@@ -90,7 +96,7 @@ internal static class BankRateParser
                          || row.GetAttributeValue("class", "")
                              .Contains("tr-green", StringComparison.OrdinalIgnoreCase);
 
-            rates.Add(new BankRate(name, buy, sell, updated, optimal));
+            rates.Add(new BankRate(name, buy, sell, updated, optimal, updatedDate));
         }
 
         logger.LogInformation("BankRateParser: parsed {Count} bank rates", rates.Count);
