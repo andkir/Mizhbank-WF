@@ -167,6 +167,16 @@ public class Worker : BackgroundService
             var usdRates = await _bankWebView.FetchRatesAsync(1, ct);
             var eurRates = await _bankWebView.FetchRatesAsync(2, ct);
 
+            if (usdRates is null)
+                _logger.LogWarning("Bank rates: USD fetch returned null");
+            else if (usdRates.Count == 0)
+                _logger.LogWarning("Bank rates: USD fetch returned empty list");
+
+            if (eurRates is null)
+                _logger.LogWarning("Bank rates: EUR fetch returned null");
+            else if (eurRates.Count == 0)
+                _logger.LogWarning("Bank rates: EUR fetch returned empty list");
+
             if (usdRates is { Count: > 0 }) _bankRateStore.UpdateUsd(usdRates);
             if (eurRates is { Count: > 0 }) _bankRateStore.UpdateEur(eurRates);
 

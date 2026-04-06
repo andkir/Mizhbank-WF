@@ -23,6 +23,15 @@ if (args.Length > 0 && args[0] == "--generate-icon")
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// File logging to %LOCALAPPDATA%\MizhbankNotifier\logs\
+var logDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "MizhbankNotifier", "logs");
+Directory.CreateDirectory(logDir);
+builder.Logging.AddSimpleConsole(o => { o.TimestampFormat = "HH:mm:ss "; });
+builder.Logging.AddProvider(new MizhbankNotifier.FileLoggerProvider(
+    Path.Combine(logDir, $"log-{DateTime.Now:yyyy-MM-dd}.txt")));
+
 builder.Services.Configure<ApiUrls>(builder.Configuration.GetSection(ApiUrls.SectionName));
 
 builder.Services.AddHttpClient<MizhbankService>(client =>
